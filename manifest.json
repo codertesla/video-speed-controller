@@ -1,0 +1,83 @@
+{
+    "manifest_version": 3,
+    "name": "视频速度控制器 (Video Speed Controller)",
+    "version": "1.0.0",
+    "description": "为B站和YouTube设置不同的默认播放速度，提升您的视频观看体验",
+    "author": "codertesla",
+    "homepage_url": "https://github.com/codertesla/video-speed-controller",
+    "icons": {
+        "16": "icons/icon.png",
+        "48": "icons/icon.png",
+        "128": "icons/icon.png"
+    },
+    "permissions": [
+        "storage"
+    ],
+    "optional_permissions": [
+        "notifications"
+    ],
+    "host_permissions": [
+        "*://*.bilibili.com/*",
+        "*://*.youtube.com/*"
+    ],
+    "content_scripts": [
+        {
+            "matches": [
+                "*://*.bilibili.com/*",
+                "*://*.youtube.com/*"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "run_at": "document_start"
+        },
+        {
+            "matches": [
+                "*://*.bilibili.com/*"
+            ],
+            "js": [
+                "content-scripts/bilibili.js"
+            ]
+        },
+        {
+            "matches": [
+                "*://*.youtube.com/*"
+            ],
+            "js": [
+                "content-scripts/youtube.js"
+            ]
+        }
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icons/icon.png",
+            "48": "icons/icon.png",
+            "128": "icons/icon.png"
+        },
+        "default_title": "视频速度控制器"
+    },
+    "background": {
+        "service_worker": "background.js",
+        "type": "module"
+    },
+    "commands": {
+        "toggle-speed-control": {
+            "suggested_key": {
+                "default": "Alt+S"
+            },
+            "description": "切换视频加速状态"
+        }
+    },
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "icons/bilibili-icon.png",
+                "icons/youtube-icon.png"
+            ],
+            "matches": [
+                "<all_urls>"
+            ]
+        }
+    ]
+}

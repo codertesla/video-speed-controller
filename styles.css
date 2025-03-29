@@ -155,3 +155,47 @@ input:checked+.slider:before {
     padding-top: 10px;
     border-top: 1px solid #3c4043;
 }
+
+.save-status {
+    margin-left: 10px;
+    color: green;
+    font-weight: bold;
+    opacity: 0;
+    transition: opacity 0.5s ease-out;
+}
+
+.save-status.show {
+    opacity: 1;
+}
+
+.error-status {
+    color: red;
+    /* 其他样式 */
+}
+
+.speed-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 5px;
+    justify-content: space-between;
+}
+
+.platform-info {
+    display: flex;
+    align-items: center;
+    flex-grow: 1;
+}
+
+.reset-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2em;
+    padding: 0 5px;
+    color: #555;
+    margin-left: 5px;
+}
+
+.reset-button:hover {
+    color: #000;
+}

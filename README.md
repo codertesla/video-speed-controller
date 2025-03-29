@@ -1,6 +1,6 @@
 # B站、YouTube倍速器 (Video Speed Controller)
 
-[![版本](https://img.shields.io/badge/Version-1.0.5-blue)](manifest.json)
+[![版本](https://img.shields.io/badge/Version-1.0.8-blue)](manifest.json)
 [![作者](https://img.shields.io/badge/Author-codertesla-brightgreen)](https://github.com/codertesla)
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-lightgrey?logo=github)](https://github.com/codertesla/video-speed-controller)
 
@@ -17,8 +17,11 @@
     *   插件禁用时显示 "OFF"。
     *   在非 B站/YouTube 视频页面显示 "ON" (表示插件已启用)。
 *   **快捷切换**: 使用快捷键 `Alt+S` (可自定义) 快速启用或禁用插件功能。
-*   **速度范围**: 支持 0.5x 到 3.0x (或根据您的实际设置调整)。
+*   **速度范围**: 支持 0.5x 到 3.0x。
 *   **简洁界面**: 通过弹出窗口轻松修改速度设置。
+*   **实时反馈**: 拖动滑块时，速度值实时更新。
+*   **自动保存与状态提示**: 更改设置后自动保存，并在弹出窗口底部显示"已保存 ✓"或错误提示。
+*   **一键重置**: 提供重置按钮 (↺)，可快速将对应平台的速度恢复为默认值 (1.0x)。
 
 ## 🚀 安装方法 (Installation)
 
@@ -36,10 +39,10 @@
 ## 💡 如何使用 (Usage)
 
 1.  安装扩展后，点击浏览器工具栏上的插件图标。
-2.  在弹出的窗口中，为 Bilibili 和 YouTube 设置所需的默认播放速度。
-3.  勾选/取消勾选 "启用插件" 来全局控制插件的开关。
-4.  设置会自动保存并立即生效。
-5.  访问 Bilibili 或 YouTube 的视频页面，预设的速度将被自动应用。
+2.  在弹出的窗口中，通过拖动滑块为 Bilibili 和 YouTube 设置所需的默认播放速度。
+3.  点击速度值旁边的重置按钮 (↺) 可将该平台速度恢复为 1.0x。
+4.  勾选/取消勾选右上角的开关来全局控制插件的启用/禁用状态。
+5.  设置会自动保存（底部会有提示），访问 Bilibili 或 YouTube 的视频页面，预设的速度将被自动应用。
 6.  您也可以使用快捷键 `Alt+S` 来快速切换插件的启用/禁用状态。
 
 ## 🤝 贡献指南 (Contributing)
@@ -65,7 +68,9 @@
 ## 📁 项目结构 (Project Structure)
 
 *   `manifest.json`: 扩展配置文件
-*   `popup.html`, `popup.js`, `popup.css`: 弹出界面相关文件
+*   `popup.html`, `popup.js`, `styles.css`: 弹出界面相关文件 (注意 CSS 文件名)
 *   `background.js`: 后台服务工作线程 (处理事件、管理状态)
-*   `content.js`: 内容脚本 (注入到页面，直接操作视频速度)
-*   `images/` 或 `icons/`: 扩展图标文件 
+*   `content-scripts/`: 内容脚本目录
+    *   `bilibili.js`: 注入 Bilibili 页面的脚本
+    *   `youtube.js`: 注入 YouTube 页面的脚本
+*   `icons/`: 扩展图标文件 

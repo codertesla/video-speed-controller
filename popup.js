@@ -1,5 +1,5 @@
 /**
- * 视频速度控制器 - 弹出界面脚本
+ * B站、YouTube倍速器 - 弹出界面脚本
  * 允许用户为B站和YouTube设置不同的视频播放速度
  */
 
@@ -16,6 +16,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const bilibiliSpeedValue = document.getElementById('bilibiliSpeedValue');
     const youtubeSpeedValue = document.getElementById('youtubeSpeedValue');
     const enableControl = document.getElementById('enableControl');
+    const saveStatusElement = document.getElementById('saveStatus'); // 获取状态元素
+    const footerTextElement = document.getElementById('footerText'); // 获取页脚文本元素
+    const resetButtons = document.querySelectorAll('.reset-button'); // 获取所有重置按钮
 
     /**
      * 更新速度滑块旁边的显示文本
@@ -34,8 +37,8 @@ document.addEventListener('DOMContentLoaded', function () {
         enabled: DEFAULT_ENABLED
     }, function (data) {
         // 设置滑块和复选框的初始值
-        bilibiliSpeed.value = data.bilibiliSpeed;
-        youtubeSpeed.value = data.youtubeSpeed;
+        bilibiliSpeed.value = Math.max(MIN_SPEED, Math.min(MAX_SPEED, data.bilibiliSpeed));
+        youtubeSpeed.value = Math.max(MIN_SPEED, Math.min(MAX_SPEED, data.youtubeSpeed));
         enableControl.checked = data.enabled;
 
         // 更新初始显示值
@@ -46,6 +49,35 @@ document.addEventListener('DOMContentLoaded', function () {
     // 监听滑动条变化并实时更新显示值
     bilibiliSpeed.addEventListener('input', () => updateSpeedDisplay(bilibiliSpeed, bilibiliSpeedValue));
     youtubeSpeed.addEventListener('input', () => updateSpeedDisplay(youtubeSpeed, youtubeSpeedValue));
+
+    /**
+     * 显示状态消息并自动隐藏
+     * @param {string} message 要显示的消息
+     * @param {boolean} isError 是否是错误消息
+     */
+    function showStatusMessage(message, isError = false) {
+        if (!saveStatusElement) return;
+
+        saveStatusElement.textContent = message;
+        saveStatusElement.classList.remove('show', 'error-status'); // 重置类
+
+        if (isError) {
+            saveStatusElement.classList.add('error-status');
+        }
+
+        // 立即显示
+        saveStatusElement.classList.add('show');
+
+        // 清除之前的隐藏计时器（如果有）
+        if (saveStatusElement.timeoutId) {
+            clearTimeout(saveStatusElement.timeoutId);
+        }
+
+        // 设置新的隐藏计时器
+        saveStatusElement.timeoutId = setTimeout(() => {
+            saveStatusElement.classList.remove('show');
+        }, 1500); // 1.5秒后隐藏
+    }
 
     /**
      * 保存用户设置到Chrome存储
@@ -59,8 +91,9 @@ document.addEventListener('DOMContentLoaded', function () {
         // 验证速度值是否在有效范围内 (使用常量)
         if (isNaN(bSpeed) || bSpeed < MIN_SPEED || bSpeed > MAX_SPEED ||
             isNaN(ySpeed) || ySpeed < MIN_SPEED || ySpeed > MAX_SPEED) {
-            console.error(`[Speed Controller] Invalid speed value. Must be between ${MIN_SPEED} and ${MAX_SPEED}.`);
-            // 可以在此处添加用户可见的错误提示，例如修改一个状态元素的文本
+            const errorMsg = `速度必须在 ${MIN_SPEED}x 和 ${MAX_SPEED}x 之间`;
+            console.error(`[Speed Controller] Invalid speed value. ${errorMsg}`);
+            showStatusMessage(errorMsg, true); // 向用户显示错误
             return;
         }
 
@@ -70,11 +103,13 @@ document.addEventListener('DOMContentLoaded', function () {
             enabled: isEnabled
         }, () => {
             if (chrome.runtime.lastError) {
+                const errorMsg = "保存设置失败";
                 console.error("[Speed Controller] Error saving settings:", chrome.runtime.lastError);
-                // 可以在此处添加用户可见的错误提示
+                showStatusMessage(errorMsg, true); // 向用户显示错误
             } else {
                 // 可选：保存成功后给用户一个反馈
-                // console.log("[Speed Controller] Settings saved successfully.");
+                console.log("[Speed Controller] Settings saved successfully.");
+                showStatusMessage("已保存 ✓"); // 显示成功消息
             }
         });
     }
@@ -83,4 +118,21 @@ document.addEventListener('DOMContentLoaded', function () {
     bilibiliSpeed.addEventListener('change', saveSettings);
     youtubeSpeed.addEventListener('change', saveSettings);
     enableControl.addEventListener('change', saveSettings);
+
+    // 处理重置按钮点击
+    resetButtons.forEach(button => {
+        button.addEventListener('click', function () {
+            const sliderId = this.dataset.targetSlider;
+            const displayId = this.dataset.targetDisplay;
+            const sliderElement = document.getElementById(sliderId);
+            const displayElement = document.getElementById(displayId);
+
+            if (sliderElement && displayElement) {
+                sliderElement.value = DEFAULT_SPEED; // 设置为默认速度
+                updateSpeedDisplay(sliderElement, displayElement); // 更新显示
+                saveSettings(); // 触发保存
+                showStatusMessage("已重置 ✓"); // 显示重置成功消息
+            }
+        });
+    });
 }); 

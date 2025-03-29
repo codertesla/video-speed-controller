@@ -9,7 +9,7 @@
     <body>
         <div class="container">
             <div class="header">
-                <h1>视频速度控制器</h1>
+                <h1>默认播放速度设置</h1>
                 <label class="toggle-switch">
                     <input type="checkbox" id="enableControl" checked>
                     <span class="slider"></span>
@@ -22,9 +22,11 @@
                         <img src="icons/bilibili-icon.png" class="platform-icon" alt="Bilibili">
                         <label for="bilibiliSpeed">Bilibili 播放速度</label>
                     </div>
-                    <div class="speed-value" id="bilibiliSpeedValue">1.3x</div>
+                    <div class="speed-value" id="bilibiliSpeedValue">1.0x</div>
+                    <button class="reset-button" data-target-slider="bilibiliSpeed"
+                        data-target-display="bilibiliSpeedValue" title="重置为默认速度">↺</button>
                 </div>
-                <input type="range" id="bilibiliSpeed" min="0.5" max="3" step="0.1" value="1.3">
+                <input type="range" id="bilibiliSpeed" min="0.5" max="3" step="0.1" value="1.0">
             </div>
 
             <div class="speed-control">
@@ -33,13 +35,16 @@
                         <img src="icons/youtube-icon.png" class="platform-icon" alt="YouTube">
                         <label for="youtubeSpeed">YouTube 播放速度</label>
                     </div>
-                    <div class="speed-value" id="youtubeSpeedValue">1.5x</div>
+                    <div class="speed-value" id="youtubeSpeedValue">1.0x</div>
+                    <button class="reset-button" data-target-slider="youtubeSpeed"
+                        data-target-display="youtubeSpeedValue" title="重置为默认速度">↺</button>
                 </div>
-                <input type="range" id="youtubeSpeed" min="0.5" max="3" step="0.1" value="1.5">
+                <input type="range" id="youtubeSpeed" min="0.5" max="3" step="0.1" value="1.0">
             </div>
 
             <div class="footer">
-                设置将自动保存并应用
+                <span id="footerText">设置将自动保存并应用</span>
+                <span id="saveStatus" class="save-status"></span>
             </div>
         </div>
         <script src="popup.js"></script>

@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "B站、YouTube倍速器",
-    "version": "1.0.5",
+    "version": "1.0.7",
     "description": "自由设定 Bilibili 和 YouTube 视频的默认播放速度。",
     "author": "codertesla",
     "homepage_url": "https://github.com/codertesla/video-speed-controller",
@@ -28,29 +28,21 @@
     "content_scripts": [
         {
             "matches": [
-                "*://*.bilibili.com/*",
-                "*://*.youtube.com/*"
-            ],
-            "js": [
-                "content.js"
-            ],
-            "run_at": "document_start"
-        },
-        {
-            "matches": [
-                "*://*.bilibili.com/*"
+                "*://*.bilibili.com/video/*"
             ],
             "js": [
                 "content-scripts/bilibili.js"
-            ]
+            ],
+            "run_at": "document_idle"
         },
         {
             "matches": [
-                "*://*.youtube.com/*"
+                "*://*.youtube.com/watch*"
             ],
             "js": [
                 "content-scripts/youtube.js"
-            ]
+            ],
+            "run_at": "document_idle"
         }
     ],
     "action": {

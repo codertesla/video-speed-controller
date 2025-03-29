@@ -32,14 +32,19 @@ function isYouTubeVideoPage(url) {
 }
 
 // 尝试向指定标签页发送设置变更消息
-function notifyContentScript(tabId) {
+// 修改：现在发送包含具体设置的消息
+function notifyContentScript(tabId, settings) {
     // --- 日志 ---
-    console.log(`[Speed Controller] Attempting to notify content script for tabId: ${tabId}`);
+    console.log(`[Speed Controller] Attempting to notify content script for tabId: ${tabId} with settings:`, settings);
     try {
-        chrome.tabs.sendMessage(tabId, { type: 'settingsChanged' })
+        // 发送更具体的消息类型和数据
+        chrome.tabs.sendMessage(tabId, { type: 'applySettings', settings: settings })
             .catch((error) => {
                 // --- 日志 ---
-                console.warn(`[Speed Controller] Could not send message to tab ${tabId}: ${error.message}`);
+                // 忽略 "Receiving end does not exist" 错误，这通常意味着内容脚本尚未注入或页面不匹配
+                if (!error.message.includes("Receiving end does not exist")) {
+                    console.warn(`[Speed Controller] Could not send message to tab ${tabId}: ${error.message}`);
+                }
             });
     } catch (e) {
         // --- 日志 ---
@@ -58,46 +63,28 @@ function handleTabUpdate(tabId, url) {
 
     chrome.storage.sync.get({
         enabled: true,
-        bilibiliSpeed: 1.25,
-        youtubeSpeed: 1.5
+        bilibiliSpeed: 1.25, // 使用常量或默认值
+        youtubeSpeed: 1.5  // 使用常量或默认值
     }, function (data) {
-        // --- 日志 ---
-        console.log(`[Speed Controller] handleTabUpdate - storage data fetched for tabId ${tabId}:`, data);
-        if (!data.enabled) {
-            console.log(`[Speed Controller] handleTabUpdate - Extension disabled for tabId ${tabId}. Updating badge to OFF.`);
-            updateBadge(false);
-        } else if (isBilibiliVideoPage(url)) {
-            console.log(`[Speed Controller] handleTabUpdate - Bilibili video page detected for tabId ${tabId}. Speed: ${data.bilibiliSpeed}`);
-            updateBadge(true, data.bilibiliSpeed);
-            // --- 日志 ---
-            console.log(`[Speed Controller] handleTabUpdate - Notifying content script for Bilibili tabId: ${tabId}`);
-            notifyContentScript(tabId);
-        } else if (isYouTubeVideoPage(url)) {
-            console.log(`[Speed Controller] handleTabUpdate - YouTube video page detected for tabId ${tabId}. Speed: ${data.youtubeSpeed}`);
-            updateBadge(true, data.youtubeSpeed);
-            // --- 日志 ---
-            console.log(`[Speed Controller] handleTabUpdate - Notifying content script for YouTube tabId: ${tabId}`);
-            notifyContentScript(tabId);
-        } else {
-            console.log(`[Speed Controller] handleTabUpdate - Non-video page detected for tabId ${tabId}. Updating badge to ON.`);
-            updateBadge(true);
+        if (chrome.runtime.lastError) {
+            console.error("Error getting settings in handleTabUpdate:", chrome.runtime.lastError);
+            return;
         }
+
+        // 更新 Badge 显示 (这部分逻辑不变)
+        updateBadgeBasedOnUrl(data.enabled, url, data.bilibiliSpeed, data.youtubeSpeed);
+
+        // 在标签页加载或切换时，通知内容脚本应用设置
+        if (isBilibiliVideoPage(url)) {
+            // 调用 notifyContentScript 并传递相关设置
+            notifyContentScript(tabId, { enabled: data.enabled, speed: data.bilibiliSpeed });
+        } else if (isYouTubeVideoPage(url)) {
+            // 调用 notifyContentScript 并传递相关设置
+            notifyContentScript(tabId, { enabled: data.enabled, speed: data.youtubeSpeed });
+        }
+        // 对于非视频页面，我们不需要通知内容脚本
     });
 }
-
-// 初始化 badge
-chrome.storage.sync.get({
-    enabled: true,
-    bilibiliSpeed: 1.25,
-    youtubeSpeed: 1.5
-}, function (data) {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs && tabs[0]) {
-            // 使用通用处理函数
-            handleTabUpdate(tabs[0].id, tabs[0].url);
-        }
-    });
-});
 
 // 监听设置变化
 chrome.storage.onChanged.addListener(function (changes, namespace) {
@@ -112,29 +99,16 @@ chrome.storage.onChanged.addListener(function (changes, namespace) {
 
             chrome.storage.sync.get({
                 enabled: true, // 获取最新的 enabled 状态
-                bilibiliSpeed: 1.25,
-                youtubeSpeed: 1.5
+                bilibiliSpeed: 1.25, // 使用默认值以防万一
+                youtubeSpeed: 1.5  // 使用默认值以防万一
             }, function (data) {
+                // 获取最新的启用状态，优先使用变化中的值
                 const currentEnabled = newEnabled !== undefined ? newEnabled : data.enabled;
                 const tab = tabs[0];
+                const url = tab.url || ""; // 添加 URL 检查
 
                 // 更新当前标签页的 Badge 显示
-                if (!currentEnabled) {
-                    updateBadge(false);
-                } else if (isBilibiliVideoPage(tab.url)) {
-                    updateBadge(true, data.bilibiliSpeed);
-                } else if (isYouTubeVideoPage(tab.url)) {
-                    updateBadge(true, data.youtubeSpeed);
-                } else {
-                    updateBadge(true); // 非视频页显示 ON
-                }
-            });
-        });
-
-        // 通知所有相关的 Bilibili 和 YouTube 内容脚本设置已更改
-        chrome.tabs.query({ url: ["*://*.bilibili.com/video/*", "*://*.youtube.com/watch*"] }, function (tabs) {
-            tabs.forEach(tab => {
-                notifyContentScript(tab.id); // 使用封装的通知函数
+                updateBadgeBasedOnUrl(currentEnabled, url, data.bilibiliSpeed, data.youtubeSpeed);
             });
         });
     }
@@ -223,4 +197,55 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(function (details) {
         // --- 日志 ---
         console.log(`[Speed Controller] webNavigation - Ignoring event for non-top frame (frameId: ${details.frameId})`);
     }
+});
+
+// Helper function to determine badge text based on state and URL
+function updateBadgeBasedOnUrl(isEnabled, url, bilibiliSpeed, youtubeSpeed) {
+    if (!isEnabled) {
+        updateBadge(false); // 显示 OFF
+    } else if (isBilibiliVideoPage(url)) {
+        updateBadge(true, bilibiliSpeed); // 显示 B 站速度
+    } else if (isYouTubeVideoPage(url)) {
+        updateBadge(true, youtubeSpeed); // 显示 YouTube 速度
+    } else {
+        updateBadge(true); // 非视频页显示 ON
+    }
+}
+
+// 初始加载时设置 Badge
+chrome.runtime.onStartup.addListener(() => {
+    // (与 storage.onChanged 类似逻辑更新 Badge)
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (!tabs || !tabs[0]) return;
+        chrome.storage.sync.get({
+            enabled: true,
+            bilibiliSpeed: 1.25,
+            youtubeSpeed: 1.5
+        }, function (data) {
+            updateBadgeBasedOnUrl(data.enabled, tabs[0].url || "", data.bilibiliSpeed, data.youtubeSpeed);
+        });
+    });
+});
+
+// 安装或更新时设置初始状态和 Badge
+chrome.runtime.onInstalled.addListener((details) => {
+    if (details.reason === "install") {
+        // 设置默认值
+        chrome.storage.sync.set({
+            enabled: true,
+            bilibiliSpeed: 1.25,
+            youtubeSpeed: 1.5
+        });
+    }
+    // 立即更新 Badge
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (!tabs || !tabs[0]) return;
+        chrome.storage.sync.get({
+            enabled: true,
+            bilibiliSpeed: 1.25,
+            youtubeSpeed: 1.5
+        }, function (data) {
+            updateBadgeBasedOnUrl(data.enabled, tabs[0].url || "", data.bilibiliSpeed, data.youtubeSpeed);
+        });
+    });
 }); 

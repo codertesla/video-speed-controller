@@ -31,16 +31,54 @@
         });
 
         // 监听存储变化
-        chrome.storage.onChanged.addListener(function (changes) {
+        chrome.storage.onChanged.addListener(function (changes, namespace) {
+            if (namespace !== 'sync') return; // 检查 namespace
+
+            let needsSpeedUpdate = false;
+
+            // 修正: 确保只处理 youtubeSpeed
             if (changes.youtubeSpeed) {
                 currentSpeed = parseFloat(changes.youtubeSpeed.newValue);
                 if (enabled) {
-                    applyVideoSpeed();
+                    needsSpeedUpdate = true;
                 }
             }
 
             if (changes.enabled) {
-                enabled = changes.enabled.newValue;
+                const newEnabledState = changes.enabled.newValue;
+                if (enabled !== newEnabledState) {
+                    enabled = newEnabledState;
+                    if (enabled) {
+                        needsSpeedUpdate = true; // 应用当前速度
+                        setupVideoObserver();
+                    } else {
+                        resetVideoSpeed();
+                        disconnectObserver();
+                    }
+                }
+            }
+
+            if (needsSpeedUpdate && enabled) {
+                applyVideoSpeed();
+            }
+        });
+
+        // 新增：监听来自 background script 的消息 (处理 tab 更新/激活/SPA导航)
+        chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
+            console.log("[Speed Controller YouTube] Received message:", message); // 日志
+            if (message.type === 'applySettings' && message.settings) {
+                const newEnabledState = message.settings.enabled;
+                const newSpeed = parseFloat(message.settings.speed);
+
+                // 更新状态
+                enabled = newEnabledState;
+                if (!isNaN(newSpeed)) {
+                    currentSpeed = newSpeed;
+                }
+
+                console.log(`[Speed Controller YouTube] Applying settings from message: enabled=${enabled}, speed=${currentSpeed}`); // 日志
+
+                // 根据收到的状态应用设置
                 if (enabled) {
                     applyVideoSpeed();
                     setupVideoObserver();
@@ -48,7 +86,9 @@
                     resetVideoSpeed();
                     disconnectObserver();
                 }
+                return false; // 同步处理完成
             }
+            return false; // 表示未处理此消息或同步处理完成
         });
     }
 

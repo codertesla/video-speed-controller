@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const saveStatusElement = document.getElementById('saveStatus'); // 获取状态元素
     const footerTextElement = document.getElementById('footerText'); // 获取页脚文本元素
     const resetButtons = document.querySelectorAll('.reset-button'); // 获取所有重置按钮
+    const versionElement = document.getElementById('versionNumber'); // 获取版本号元素
 
     /**
      * 更新速度滑块旁边的显示文本
@@ -135,4 +136,16 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     });
+
+    // --- 新增：获取并显示版本号 ---
+    if (versionElement) {
+        try {
+            const manifest = chrome.runtime.getManifest();
+            versionElement.textContent = `v${manifest.version}`;
+        } catch (e) {
+            console.error("[Speed Controller] Error getting manifest version:", e);
+            versionElement.textContent = 'v?.?.?'; // 出错时显示占位符
+        }
+    }
+    // --- 结束新增 ---
 }); 

@@ -148,17 +148,48 @@ input:checked+.slider:before {
 }
 
 .footer {
-    font-size: 10px;
-    color: var(--secondary-text);
-    text-align: center;
-    margin-top: 10px;
+    margin-top: 15px;
     padding-top: 10px;
-    border-top: 1px solid #3c4043;
+    border-top: 1px solid var(--surface-color);
+    font-size: 0.8em;
+    text-align: center;
+    color: var(--secondary-text);
+}
+
+.footer-line-1 {
+    margin-bottom: 5px;
+    min-height: 1.2em;
+    color: var(--secondary-text);
+}
+
+.footer-line-2 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.6em;
+    line-height: 1.4;
+    margin-top: 12px;
+    color: var(--secondary-text);
+}
+
+.footer-line-2 span,
+.footer-line-2 a {
+    color: inherit;
+}
+
+.footer a {
+    text-decoration: none;
+    color: inherit;
+}
+
+.footer a:hover {
+    text-decoration: underline;
+    color: var(--text-color);
 }
 
 .save-status {
     margin-left: 10px;
-    color: green;
+    color: #4caf50;
     font-weight: bold;
     opacity: 0;
     transition: opacity 0.5s ease-out;
@@ -169,7 +200,7 @@ input:checked+.slider:before {
 }
 
 .error-status {
-    color: red;
+    color: #f44336;
     /* 其他样式 */
 }
 
@@ -192,10 +223,10 @@ input:checked+.slider:before {
     cursor: pointer;
     font-size: 1.2em;
     padding: 0 5px;
-    color: #555;
+    color: var(--secondary-text);
     margin-left: 5px;
 }
 
 .reset-button:hover {
-    color: #000;
+    color: var(--text-color);
 }

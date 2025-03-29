@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
-    "name": "视频速度控制器 (Video Speed Controller)",
-    "version": "1.0.0",
-    "description": "为B站和YouTube设置不同的默认播放速度，提升您的视频观看体验",
+    "name": "B站、YouTube倍速器",
+    "version": "1.0.5",
+    "description": "自由设定 Bilibili 和 YouTube 视频的默认播放速度。",
     "author": "codertesla",
     "homepage_url": "https://github.com/codertesla/video-speed-controller",
     "icons": {
@@ -11,7 +11,12 @@
         "128": "icons/icon.png"
     },
     "permissions": [
-        "storage"
+        "storage",
+        "activeTab",
+        "tabs",
+        "scripting",
+        "webNavigation",
+        "alarms"
     ],
     "optional_permissions": [
         "notifications"

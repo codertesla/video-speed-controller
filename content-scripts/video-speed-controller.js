@@ -6,6 +6,9 @@
 (function() {
     'use strict';
 
+    const MIN_SPEED = (window.SPEED_SETTINGS && window.SPEED_SETTINGS.MIN) || 0.1;
+    const MAX_SPEED = (window.SPEED_SETTINGS && window.SPEED_SETTINGS.MAX) || 16.0;
+
     // 错误处理工具
     class ErrorHandler {
         static log(level, message, error = null) {
@@ -66,7 +69,7 @@
 
         static isValidSpeed(speed) {
             return typeof speed === 'number' && !isNaN(speed) &&
-                   speed >= 0.1 && speed <= 16; // 支持更广的范围
+                   speed >= MIN_SPEED && speed <= MAX_SPEED;
         }
 
         // 智能查找最佳观察目标

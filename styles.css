@@ -230,3 +230,29 @@ input:checked+.slider:before {
 .reset-button:hover {
     color: var(--text-color);
 }
+
+/* 新增：滑块与数字输入的布局 */
+.speed-input-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.speed-input-group input[type="range"] {
+    flex: 1;
+    margin: 10px 0;
+}
+
+.speed-input {
+    width: 52px;
+    padding: 2px 4px;
+    border: 1px solid #5f6368;
+    border-radius: 4px;
+    background: var(--surface-color);
+    color: var(--text-color);
+}
+
+.speed-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}

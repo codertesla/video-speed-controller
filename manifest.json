@@ -31,6 +31,7 @@
                 "*://*.bilibili.com/video/*"
             ],
             "js": [
+                "constants.js",
                 "content-scripts/video-speed-controller.js",
                 "content-scripts/bilibili.js"
             ],
@@ -41,6 +42,7 @@
                 "*://*.youtube.com/watch*"
             ],
             "js": [
+                "constants.js",
                 "content-scripts/video-speed-controller.js",
                 "content-scripts/youtube.js"
             ],

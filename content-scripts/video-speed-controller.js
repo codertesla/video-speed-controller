@@ -15,12 +15,21 @@
             const prefix = '[Video Speed Controller]';
             const logMessage = `${prefix} ${message}`;
 
-            switch(level) {
+            // 仅在提供了错误对象时才追加到日志，避免在控制台出现“null”
+            const logWithOptionalError = (logger) => {
+                if (error !== null && error !== undefined) {
+                    logger(logMessage, error);
+                } else {
+                    logger(logMessage);
+                }
+            };
+
+            switch (level) {
                 case 'error':
-                    console.error(logMessage, error);
+                    logWithOptionalError(console.error);
                     break;
                 case 'warn':
-                    console.warn(logMessage, error);
+                    logWithOptionalError(console.warn);
                     break;
                 case 'info':
                 default:
@@ -48,9 +57,8 @@
     class DOMUtils {
         static findVideoElements() {
             return Array.from(document.querySelectorAll('video')).filter(video => {
-                // 过滤掉一些不需要的video元素，如广告、预览等
-                return video.offsetWidth > 0 && video.offsetHeight > 0 &&
-                       video.readyState > 0 && !video.classList.contains('speed-controller-ignored');
+                // 放宽条件：仅忽略被显式标记的元素，尽早拿到新创建的 <video>
+                return !video.classList.contains('speed-controller-ignored');
             });
         }
 
@@ -115,6 +123,7 @@
             this.enabled = config.defaultEnabled !== false;
             this.observer = null;
             this.isInitialized = false;
+            this.hasLoggedDeepTargetWarning = false;
             this.storageKeys = {
                 speed: `${platform}Speed`,
                 enabled: 'enabled'
@@ -340,8 +349,11 @@
 
                 // 如果目标太深且启用了子树观察，考虑优化
                 if (targetDepth > 5 && subtreeEnabled && targetNode !== document.body) {
-                    ErrorHandler.log('warn',
-                        `${this.platform} 观察目标深度较大(${targetDepth})，可能影响性能`);
+                    if (!this.hasLoggedDeepTargetWarning) {
+                        ErrorHandler.log('warn',
+                            `${this.platform} 观察目标深度较大(${targetDepth})，可能影响性能`);
+                        this.hasLoggedDeepTargetWarning = true;
+                    }
                 }
 
                 this.observer = new MutationObserver((mutations) => {

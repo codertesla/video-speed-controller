@@ -1,6 +1,6 @@
 # B站、YouTube倍速器 (Video Speed Controller)
 
-[![版本](https://img.shields.io/badge/Version-1.0.8-blue)](manifest.json)
+[![版本](https://img.shields.io/badge/Version-1.1.2-blue)](manifest.json)
 [![作者](https://img.shields.io/badge/Author-codertesla-brightgreen)](https://github.com/codertesla)
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repo-lightgrey?logo=github)](https://github.com/codertesla/video-speed-controller)
 

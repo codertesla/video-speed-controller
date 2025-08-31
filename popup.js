@@ -3,23 +3,45 @@
  * 允许用户为B站和YouTube设置不同的视频播放速度
  */
 
-document.addEventListener('DOMContentLoaded', function () {
-    // 定义常量
-    const MIN_SPEED = 0.5;
-    const MAX_SPEED = 3.0;
-    const DEFAULT_SPEED = 1.0;
-    const DEFAULT_ENABLED = true;
+document.addEventListener('DOMContentLoaded', async function () {
+    // 统一配置常量
+    const { MIN: MIN_SPEED, MAX: MAX_SPEED, DEFAULT: DEFAULT_SPEED, DEFAULT_ENABLED } =
+        window.SPEED_SETTINGS || { MIN: 0.1, MAX: 16.0, DEFAULT: 1.0, DEFAULT_ENABLED: true };
 
     // 获取DOM元素
     const bilibiliSpeed = document.getElementById('bilibiliSpeed');
     const youtubeSpeed = document.getElementById('youtubeSpeed');
+    const bilibiliSpeedInput = document.getElementById('bilibiliSpeedInput');
+    const youtubeSpeedInput = document.getElementById('youtubeSpeedInput');
     const bilibiliSpeedValue = document.getElementById('bilibiliSpeedValue');
     const youtubeSpeedValue = document.getElementById('youtubeSpeedValue');
     const enableControl = document.getElementById('enableControl');
-    const saveStatusElement = document.getElementById('saveStatus'); // 获取状态元素
-    const footerTextElement = document.getElementById('footerText'); // 获取页脚文本元素
-    const resetButtons = document.querySelectorAll('.reset-button'); // 获取所有重置按钮
-    const versionElement = document.getElementById('versionNumber'); // 获取版本号元素
+    const saveStatusElement = document.getElementById('saveStatus');
+    const footerTextElement = document.getElementById('footerText');
+    const resetButtons = document.querySelectorAll('.reset-button');
+    const versionElement = document.getElementById('versionNumber');
+
+    // 设置控件属性
+    [bilibiliSpeed, youtubeSpeed].forEach(slider => {
+        slider.min = MIN_SPEED;
+        slider.max = MAX_SPEED;
+        slider.step = 0.1;
+    });
+    [bilibiliSpeedInput, youtubeSpeedInput].forEach(input => {
+        input.min = MIN_SPEED;
+        input.max = MAX_SPEED;
+        input.step = 0.1;
+    });
+
+    /**
+     * 限制速度值范围
+     * @param {number} value
+     */
+    function clampSpeed(value) {
+        const num = parseFloat(value);
+        if (isNaN(num)) return DEFAULT_SPEED;
+        return Math.max(MIN_SPEED, Math.min(MAX_SPEED, num));
+    }
 
     /**
      * 更新速度滑块旁边的显示文本
@@ -31,25 +53,50 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // 从存储中加载设置
-    chrome.storage.sync.get({
-        // 提供默认值，如果存储中没有对应键，则使用这些值
-        bilibiliSpeed: DEFAULT_SPEED,
-        youtubeSpeed: DEFAULT_SPEED,
-        enabled: DEFAULT_ENABLED
-    }, function (data) {
-        // 设置滑块和复选框的初始值
-        bilibiliSpeed.value = Math.max(MIN_SPEED, Math.min(MAX_SPEED, data.bilibiliSpeed));
-        youtubeSpeed.value = Math.max(MIN_SPEED, Math.min(MAX_SPEED, data.youtubeSpeed));
+    try {
+        const data = await chrome.storage.sync.get({
+            bilibiliSpeed: DEFAULT_SPEED,
+            youtubeSpeed: DEFAULT_SPEED,
+            enabled: DEFAULT_ENABLED
+        });
+
+        bilibiliSpeed.value = clampSpeed(data.bilibiliSpeed);
+        youtubeSpeed.value = clampSpeed(data.youtubeSpeed);
+        bilibiliSpeedInput.value = bilibiliSpeed.value;
+        youtubeSpeedInput.value = youtubeSpeed.value;
         enableControl.checked = data.enabled;
 
-        // 更新初始显示值
         updateSpeedDisplay(bilibiliSpeed, bilibiliSpeedValue);
+        updateSpeedDisplay(youtubeSpeed, youtubeSpeedValue);
+    } catch (e) {
+        console.error('[Speed Controller] Error loading settings:', e);
+    }
+
+    // 监听滑动条变化并实时更新显示值
+    bilibiliSpeed.addEventListener('input', () => {
+        bilibiliSpeedInput.value = bilibiliSpeed.value;
+        updateSpeedDisplay(bilibiliSpeed, bilibiliSpeedValue);
+    });
+    youtubeSpeed.addEventListener('input', () => {
+        youtubeSpeedInput.value = youtubeSpeed.value;
         updateSpeedDisplay(youtubeSpeed, youtubeSpeedValue);
     });
 
-    // 监听滑动条变化并实时更新显示值
-    bilibiliSpeed.addEventListener('input', () => updateSpeedDisplay(bilibiliSpeed, bilibiliSpeedValue));
-    youtubeSpeed.addEventListener('input', () => updateSpeedDisplay(youtubeSpeed, youtubeSpeedValue));
+    // 监听数字输入变化
+    bilibiliSpeedInput.addEventListener('change', () => {
+        const val = clampSpeed(bilibiliSpeedInput.value);
+        bilibiliSpeed.value = val;
+        bilibiliSpeedInput.value = val;
+        updateSpeedDisplay(bilibiliSpeed, bilibiliSpeedValue);
+        saveSettings();
+    });
+    youtubeSpeedInput.addEventListener('change', () => {
+        const val = clampSpeed(youtubeSpeedInput.value);
+        youtubeSpeed.value = val;
+        youtubeSpeedInput.value = val;
+        updateSpeedDisplay(youtubeSpeed, youtubeSpeedValue);
+        saveSettings();
+    });
 
     /**
      * 显示状态消息并自动隐藏
@@ -84,35 +131,32 @@ document.addEventListener('DOMContentLoaded', function () {
      * 保存用户设置到Chrome存储
      * 验证速度值在有效范围内
      */
-    function saveSettings() {
+    async function saveSettings() {
         const bSpeed = parseFloat(bilibiliSpeed.value);
         const ySpeed = parseFloat(youtubeSpeed.value);
         const isEnabled = enableControl.checked;
 
-        // 验证速度值是否在有效范围内 (使用常量)
         if (isNaN(bSpeed) || bSpeed < MIN_SPEED || bSpeed > MAX_SPEED ||
             isNaN(ySpeed) || ySpeed < MIN_SPEED || ySpeed > MAX_SPEED) {
             const errorMsg = `速度必须在 ${MIN_SPEED}x 和 ${MAX_SPEED}x 之间`;
             console.error(`[Speed Controller] Invalid speed value. ${errorMsg}`);
-            showStatusMessage(errorMsg, true); // 向用户显示错误
+            showStatusMessage(errorMsg, true);
             return;
         }
 
-        chrome.storage.sync.set({
-            bilibiliSpeed: bSpeed,
-            youtubeSpeed: ySpeed,
-            enabled: isEnabled
-        }, () => {
-            if (chrome.runtime.lastError) {
-                const errorMsg = "保存设置失败";
-                console.error("[Speed Controller] Error saving settings:", chrome.runtime.lastError);
-                showStatusMessage(errorMsg, true); // 向用户显示错误
-            } else {
-                // 可选：保存成功后给用户一个反馈
-                console.log("[Speed Controller] Settings saved successfully.");
-                showStatusMessage("已保存 ✓"); // 显示成功消息
-            }
-        });
+        try {
+            await chrome.storage.sync.set({
+                bilibiliSpeed: bSpeed,
+                youtubeSpeed: ySpeed,
+                enabled: isEnabled
+            });
+            console.log('[Speed Controller] Settings saved successfully.');
+            showStatusMessage('已保存 ✓');
+        } catch (err) {
+            const errorMsg = '保存设置失败';
+            console.error('[Speed Controller] Error saving settings:', err);
+            showStatusMessage(errorMsg, true);
+        }
     }
 
     // 监听值变化并保存 (change事件在用户释放滑块或更改复选框后触发)
@@ -127,12 +171,14 @@ document.addEventListener('DOMContentLoaded', function () {
             const displayId = this.dataset.targetDisplay;
             const sliderElement = document.getElementById(sliderId);
             const displayElement = document.getElementById(displayId);
+            const inputElement = document.getElementById(sliderId + 'Input');
 
             if (sliderElement && displayElement) {
-                sliderElement.value = DEFAULT_SPEED; // 设置为默认速度
-                updateSpeedDisplay(sliderElement, displayElement); // 更新显示
-                saveSettings(); // 触发保存
-                showStatusMessage("已重置 ✓"); // 显示重置成功消息
+                sliderElement.value = DEFAULT_SPEED;
+                if (inputElement) inputElement.value = DEFAULT_SPEED;
+                updateSpeedDisplay(sliderElement, displayElement);
+                saveSettings();
+                showStatusMessage('已重置 ✓');
             }
         });
     });

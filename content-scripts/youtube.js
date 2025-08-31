@@ -59,19 +59,35 @@
     // YouTube特定的额外处理
     function setupYouTubeSpecificHandlers() {
         // 监听YouTube的导航事件（用于SPA页面切换）
+        const applyWithRetries = (maxRetries = 10, intervalMs = 500) => {
+            let attempts = 0;
+            const tryApply = () => {
+                attempts++;
+                if (!controller || !controller.enabled) return;
+                const player = document.querySelector('#movie_player, .html5-video-player');
+                const video = document.querySelector('video');
+                if (player && video) {
+                    controller.applyVideoSpeed();
+                    return; // 成功后停止
+                }
+                if (attempts < maxRetries) {
+                    setTimeout(tryApply, intervalMs);
+                }
+            };
+            tryApply();
+        };
+
         document.addEventListener('yt-navigate-finish', () => {
             if (controller && controller.enabled) {
-                // 页面导航完成后，延迟应用速度设置
-                setTimeout(() => {
-                    controller.applyVideoSpeed();
-                }, 1000);
+                applyWithRetries(14, 350); // 总~5s 重试窗口
             }
         });
 
         // 监听播放器状态变化
         const checkPlayerReady = () => {
-            const player = document.querySelector('#movie_player');
-            if (player && controller && controller.enabled) {
+            const player = document.querySelector('#movie_player, .html5-video-player');
+            const video = document.querySelector('video');
+            if (player && video && controller && controller.enabled) {
                 controller.applyVideoSpeed();
             } else {
                 // 如果播放器还没准备好，继续检查
@@ -80,7 +96,7 @@
         };
 
         // 页面加载后开始检查播放器
-        setTimeout(checkPlayerReady, 1000);
+        setTimeout(checkPlayerReady, 600);
     }
 
     // 页面加载完成后初始化

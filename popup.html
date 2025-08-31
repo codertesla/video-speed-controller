@@ -26,7 +26,10 @@
                     <button class="reset-button" data-target-slider="bilibiliSpeed"
                         data-target-display="bilibiliSpeedValue" title="重置为默认速度">↺</button>
                 </div>
-                <input type="range" id="bilibiliSpeed" min="0.5" max="3" step="0.1" value="1.0">
+                <div class="speed-input-group">
+                    <input type="range" id="bilibiliSpeed" step="0.1" value="1.0">
+                    <input type="number" id="bilibiliSpeedInput" step="0.1" value="1.0" class="speed-input">
+                </div>
             </div>
 
             <div class="speed-control">
@@ -39,7 +42,10 @@
                     <button class="reset-button" data-target-slider="youtubeSpeed"
                         data-target-display="youtubeSpeedValue" title="重置为默认速度">↺</button>
                 </div>
-                <input type="range" id="youtubeSpeed" min="0.5" max="3" step="0.1" value="1.0">
+                <div class="speed-input-group">
+                    <input type="range" id="youtubeSpeed" step="0.1" value="1.0">
+                    <input type="number" id="youtubeSpeedInput" step="0.1" value="1.0" class="speed-input">
+                </div>
             </div>
 
             <div class="footer">
@@ -56,6 +62,7 @@
                 </div>
             </div>
         </div>
+        <script src="constants.js"></script>
         <script src="popup.js"></script>
     </body>
 

@@ -1,6 +1,6 @@
 const SPEED_SETTINGS = {
   MIN: 0.1,
-  MAX: 5.0,
+  MAX: 3.0,
   DEFAULT: 1.0,
   DEFAULT_ENABLED: true
 };

@@ -25,6 +25,8 @@
             attributes: true,
             attributeFilter: ['src', 'class', 'style', 'data-loaded']
         },
+        maxObserverDepth: 6,
+        deepTargetWarningThreshold: 9,
         // B站视频加载可能需要更长的延迟
         debounceDelay: 500,
         defaultSpeed: 1.25,

@@ -113,6 +113,50 @@
             }
             return depth;
         }
+
+        // 将观察目标限制在指定深度以内，返回调整后的节点与深度
+        static clampObserverTargetDepth(element, maxDepth) {
+            if (!element) {
+                return { node: null, depth: 0 };
+            }
+
+            if (typeof maxDepth !== 'number' || maxDepth < 0) {
+                return { node: element, depth: DOMUtils.getElementDepth(element) };
+            }
+
+            let current = element;
+            let depth = DOMUtils.getElementDepth(current);
+
+            while (current && current !== document.body && depth > maxDepth) {
+                const parent = current.parentElement;
+                if (!parent) {
+                    break;
+                }
+                current = parent;
+                depth = DOMUtils.getElementDepth(current);
+            }
+
+            return { node: current || element, depth };
+        }
+
+        // 生成便于调试的元素描述
+        static describeElement(element) {
+            if (!element) {
+                return 'unknown';
+            }
+
+            const parts = [];
+            if (element.tagName) {
+                parts.push(element.tagName.toLowerCase());
+            }
+            if (element.id) {
+                parts.push(`#${element.id}`);
+            }
+            if (element.classList && element.classList.length) {
+                parts.push(`.${Array.from(element.classList).join('.')}`);
+            }
+            return parts.join('') || 'unnamed-element';
+        }
     }
 
     // 视频速度控制器核心类
@@ -129,6 +173,16 @@
                 enabled: 'enabled'
             };
 
+            this.manualOverrides = new Map();
+            this.observedVideos = new Set();
+            this.videoSources = new Map();
+            this.boundHandleRateChange = this.handleRateChange.bind(this);
+            this.boundHandleLoadedMetadata = this.handleLoadedMetadata.bind(this);
+            this.boundRecordInteraction = this.recordInteraction.bind(this);
+            this.interactionEvents = ['pointerdown', 'mousedown', 'keydown', 'wheel', 'touchstart'];
+            this.interactionTrackingInitialized = false;
+            this.lastUserInteraction = 0;
+
             // 配置选项
             this.config = {
                 targetSelector: config.targetSelector || 'body',
@@ -139,6 +193,13 @@
                     attributeFilter: ['src', 'class']
                 },
                 debounceDelay: config.debounceDelay || 300,
+                maxObserverDepth: typeof config.maxObserverDepth === 'number' ? config.maxObserverDepth : 6,
+                deepTargetWarningThreshold: typeof config.deepTargetWarningThreshold === 'number'
+                    ? config.deepTargetWarningThreshold
+                    : 7,
+                manualOverrideInteractionWindow: typeof config.manualOverrideInteractionWindow === 'number'
+                    ? config.manualOverrideInteractionWindow
+                    : 1200,
                 ...config
             };
 
@@ -154,6 +215,7 @@
                 await this.loadSettings();
                 this.setupStorageListener();
                 this.setupMessageListener();
+                this.setupUserInteractionTracking();
 
                 if (this.enabled) {
                     this.applyVideoSpeed();
@@ -207,6 +269,7 @@
                     if (this.enabled !== newEnabled) {
                         this.enabled = newEnabled;
                         if (this.enabled) {
+                            this.clearManualOverrides();
                             this.applyVideoSpeed();
                             this.setupObserver();
                         } else {
@@ -223,6 +286,7 @@
                     if (DOMUtils.isValidSpeed(newSpeed) && this.currentSpeed !== newSpeed) {
                         this.currentSpeed = newSpeed;
                         if (this.enabled) {
+                            this.clearManualOverrides();
                             needsUpdate = true;
                         }
                     }
@@ -262,11 +326,13 @@
 
                 // 应用设置
                 if (this.enabled) {
+                    this.clearManualOverrides();
                     this.applyVideoSpeed();
                     this.setupObserver();
                 } else {
                     this.resetVideoSpeed();
                     this.disconnectObserver();
+                    this.clearManualOverrides();
                 }
             } catch (error) {
                 ErrorHandler.log('error', `${this.platform} 处理设置消息失败`, error);
@@ -291,8 +357,13 @@
                 let appliedCount = 0;
 
                 videos.forEach(video => {
-                    if (video.playbackRate !== this.currentSpeed) {
-                        video.playbackRate = this.currentSpeed;
+                    this.attachVideoListeners(video);
+
+                    if (this.manualOverrides.has(video)) {
+                        return;
+                    }
+
+                    if (this.setVideoPlaybackRate(video, this.currentSpeed)) {
                         appliedCount++;
                     }
                 });
@@ -313,8 +384,9 @@
                 let resetCount = 0;
 
                 videos.forEach(video => {
-                    if (video.playbackRate !== 1.0) {
-                        video.playbackRate = 1.0;
+                    this.attachVideoListeners(video);
+
+                    if (this.setVideoPlaybackRate(video, 1.0)) {
                         resetCount++;
                     }
                 });
@@ -334,6 +406,7 @@
             try {
                 // 使用智能目标选择
                 let targetNode;
+                let observerOptions = { ...this.config.observeOptions };
 
                 if (Array.isArray(this.config.targetSelector)) {
                     // 如果是选择器数组，寻找最佳目标
@@ -344,30 +417,35 @@
                 }
 
                 // 评估目标的性能影响
-                const targetDepth = DOMUtils.getElementDepth(targetNode);
-                const subtreeEnabled = this.config.observeOptions.subtree !== false;
+                let { node: adjustedTarget, depth: targetDepth } = DOMUtils.clampObserverTargetDepth(
+                    targetNode,
+                    this.config.maxObserverDepth
+                );
 
-                // 如果目标太深且启用了子树观察，考虑优化
-                if (targetDepth > 5 && subtreeEnabled && targetNode !== document.body) {
-                    if (!this.hasLoggedDeepTargetWarning) {
-                        ErrorHandler.log('warn',
-                            `${this.platform} 观察目标深度较大(${targetDepth})，可能影响性能`);
-                        this.hasLoggedDeepTargetWarning = true;
-                    }
+                if (adjustedTarget && adjustedTarget !== targetNode) {
+                    targetNode = adjustedTarget;
+                    ErrorHandler.log('info', `${this.platform} 调整观察目标为 ${DOMUtils.describeElement(targetNode)} 以降低观察深度`);
+                }
+
+                observerOptions = { ...observerOptions };
+                const warningThreshold = this.config.deepTargetWarningThreshold;
+                if (typeof warningThreshold === 'number' && targetDepth > warningThreshold && !this.hasLoggedDeepTargetWarning) {
+                    ErrorHandler.log('info',
+                        `${this.platform} 观察目标深度较大(${targetDepth})，请确认 targetSelector 是否最佳`);
+                    this.hasLoggedDeepTargetWarning = true;
                 }
 
                 this.observer = new MutationObserver((mutations) => {
                     this.handleMutations(mutations);
                 });
 
-                this.observer.observe(targetNode, this.config.observeOptions);
+                this.observer.observe(targetNode, observerOptions);
 
                 // 记录观察器信息用于调试
                 this.observerInfo = {
-                    target: targetNode.tagName + (targetNode.id ? '#' + targetNode.id : '') +
-                           (targetNode.className ? '.' + targetNode.className.split(' ').join('.') : ''),
+                    target: DOMUtils.describeElement(targetNode),
                     depth: targetDepth,
-                    options: this.config.observeOptions
+                    options: observerOptions
                 };
 
                 ErrorHandler.log('info', `${this.platform} MutationObserver 已设置，目标: ${this.observerInfo.target}`);
@@ -460,6 +538,15 @@
             if (this.debounceTimer) {
                 clearTimeout(this.debounceTimer);
             }
+            this.observedVideos.forEach(video => {
+                video.removeEventListener('ratechange', this.boundHandleRateChange, true);
+                video.removeEventListener('loadedmetadata', this.boundHandleLoadedMetadata, true);
+                delete video.__speedControllerApplying;
+            });
+            this.observedVideos.clear();
+            this.manualOverrides.clear();
+            this.videoSources.clear();
+            this.teardownUserInteractionTracking();
             this.isInitialized = false;
             ErrorHandler.log('info', `${this.platform} 控制器已销毁`);
         }
@@ -473,6 +560,142 @@
                 isInitialized: this.isInitialized,
                 videoCount: DOMUtils.findVideoElements().length
             };
+        }
+
+        attachVideoListeners(video) {
+            if (!video || this.observedVideos.has(video)) {
+                return;
+            }
+
+            video.addEventListener('ratechange', this.boundHandleRateChange, true);
+            video.addEventListener('loadedmetadata', this.boundHandleLoadedMetadata, true);
+            this.observedVideos.add(video);
+            this.videoSources.set(video, video.currentSrc || video.src || '');
+        }
+
+        clearManualOverrides() {
+            this.manualOverrides.clear();
+        }
+
+        setVideoPlaybackRate(video, speed) {
+            if (!video || !DOMUtils.isValidSpeed(speed)) {
+                return false;
+            }
+
+            if (typeof video.playbackRate !== 'number') {
+                return false;
+            }
+
+            if (Math.abs(video.playbackRate - speed) < 0.001) {
+                this.manualOverrides.delete(video);
+                return false;
+            }
+
+            try {
+                video.__speedControllerApplying = true;
+                video.playbackRate = speed;
+                this.manualOverrides.delete(video);
+                this.videoSources.set(video, video.currentSrc || video.src || '');
+                return true;
+            } catch (error) {
+                ErrorHandler.log('warn', `${this.platform} 设置视频速度失败，速率=${speed}`, error);
+                return false;
+            } finally {
+                video.__speedControllerApplying = false;
+            }
+        }
+
+        handleRateChange(event) {
+            const video = event.target;
+
+            if (!video || video.__speedControllerApplying) {
+                return;
+            }
+
+            const newRate = video.playbackRate;
+
+            if (!DOMUtils.isValidSpeed(newRate)) {
+                return;
+            }
+
+            const now = Date.now();
+            const interactionWindow = Math.max(0, this.config.manualOverrideInteractionWindow || 0);
+            const hadRecentInteraction = now - this.lastUserInteraction <= interactionWindow;
+
+            if (!hadRecentInteraction) {
+                this.manualOverrides.delete(video);
+                if (this.enabled) {
+                    this.debounceUpdate();
+                }
+                return;
+            }
+
+            if (Math.abs(newRate - this.currentSpeed) < 0.001) {
+                this.manualOverrides.delete(video);
+                return;
+            }
+
+            this.manualOverrides.set(video, {
+                speed: newRate,
+                timestamp: Date.now()
+            });
+
+            ErrorHandler.log('info', `${this.platform} 检测到手动倍速 ${newRate}x，暂停自动应用`);
+        }
+
+        handleLoadedMetadata(event) {
+            const video = event.target;
+
+            if (!video) {
+                return;
+            }
+
+            const newSrc = video.currentSrc || video.src || '';
+            const previousSrc = this.videoSources.get(video) || '';
+
+            if (newSrc && newSrc !== previousSrc) {
+                this.manualOverrides.delete(video);
+                this.videoSources.set(video, newSrc);
+                ErrorHandler.log('info', `${this.platform} 检测到新媒体源，恢复自动倍速`);
+            }
+
+            if (this.enabled && !this.manualOverrides.has(video)) {
+                this.debounceUpdate();
+            }
+        }
+
+        recordInteraction() {
+            this.lastUserInteraction = Date.now();
+        }
+
+        setupUserInteractionTracking() {
+            if (this.interactionTrackingInitialized) {
+                return;
+            }
+
+            this.interactionEvents.forEach(eventName => {
+                document.addEventListener(eventName, this.boundRecordInteraction, true);
+            });
+
+            this.interactionTrackingInitialized = true;
+        }
+
+        teardownUserInteractionTracking() {
+            if (!this.interactionTrackingInitialized) {
+                return;
+            }
+
+            this.interactionEvents.forEach(eventName => {
+                document.removeEventListener(eventName, this.boundRecordInteraction, true);
+            });
+
+            this.interactionTrackingInitialized = false;
+        }
+
+        prepareForNavigation() {
+            this.clearManualOverrides();
+            this.videoSources.clear();
+            this.lastUserInteraction = 0;
         }
     }
 

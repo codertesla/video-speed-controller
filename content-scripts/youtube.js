@@ -27,6 +27,9 @@
         },
         // YouTube视频切换较快，使用稍短的延迟
         debounceDelay: 300,
+        maxObserverDepth: 6,
+        deepTargetWarningThreshold: 9,
+        manualOverrideInteractionWindow: 1600,
         defaultSpeed: 1.5,
         defaultEnabled: true
     };
@@ -79,6 +82,9 @@
 
         document.addEventListener('yt-navigate-finish', () => {
             if (controller && controller.enabled) {
+                if (typeof controller.prepareForNavigation === 'function') {
+                    controller.prepareForNavigation();
+                }
                 applyWithRetries(14, 350); // 总~5s 重试窗口
             }
         });
@@ -97,6 +103,12 @@
 
         // 页面加载后开始检查播放器
         setTimeout(checkPlayerReady, 600);
+
+        document.addEventListener('yt-navigate-start', () => {
+            if (controller && typeof controller.prepareForNavigation === 'function') {
+                controller.prepareForNavigation();
+            }
+        });
     }
 
     // 页面加载完成后初始化

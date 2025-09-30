@@ -5,8 +5,28 @@
 
 document.addEventListener('DOMContentLoaded', async function () {
     // 统一配置常量
-    const { MIN: MIN_SPEED, MAX: MAX_SPEED, DEFAULT: DEFAULT_SPEED, DEFAULT_ENABLED } =
-        window.SPEED_SETTINGS || { MIN: 0.1, MAX: 16.0, DEFAULT: 1.0, DEFAULT_ENABLED: true };
+    const speedSettings = window.SPEED_SETTINGS || {};
+    const MIN_SPEED = typeof speedSettings.MIN === "number" ? speedSettings.MIN : 0.1;
+    const MAX_SPEED = typeof speedSettings.MAX === "number" ? speedSettings.MAX : 3.0;
+    const DEFAULT_SPEED = typeof speedSettings.DEFAULT === "number" ? speedSettings.DEFAULT : 1.0;
+    const DEFAULT_ENABLED = typeof speedSettings.DEFAULT_ENABLED === "boolean"
+        ? speedSettings.DEFAULT_ENABLED
+        : true;
+    const PLATFORM_DEFAULTS = speedSettings.PLATFORM_DEFAULTS || {};
+    const DEFAULT_BILIBILI_SPEED = Math.max(
+        MIN_SPEED,
+        Math.min(MAX_SPEED,
+            typeof PLATFORM_DEFAULTS.bilibili === "number"
+                ? PLATFORM_DEFAULTS.bilibili
+                : DEFAULT_SPEED)
+    );
+    const DEFAULT_YOUTUBE_SPEED = Math.max(
+        MIN_SPEED,
+        Math.min(MAX_SPEED,
+            typeof PLATFORM_DEFAULTS.youtube === "number"
+                ? PLATFORM_DEFAULTS.youtube
+                : DEFAULT_SPEED)
+    );
 
     // 获取DOM元素
     const bilibiliSpeed = document.getElementById('bilibiliSpeed');
@@ -35,11 +55,14 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     /**
      * 限制速度值范围
-     * @param {number} value
+     * @param {number|string} value
+     * @param {number} [fallback] 当值无法解析时使用的默认值
      */
-    function clampSpeed(value) {
+    function clampSpeed(value, fallback = DEFAULT_SPEED) {
         const num = parseFloat(value);
-        if (isNaN(num)) return DEFAULT_SPEED;
+        if (isNaN(num)) {
+            return Math.max(MIN_SPEED, Math.min(MAX_SPEED, fallback));
+        }
         return Math.max(MIN_SPEED, Math.min(MAX_SPEED, num));
     }
 
@@ -55,13 +78,13 @@ document.addEventListener('DOMContentLoaded', async function () {
     // 从存储中加载设置
     try {
         const data = await chrome.storage.sync.get({
-            bilibiliSpeed: DEFAULT_SPEED,
-            youtubeSpeed: DEFAULT_SPEED,
+            bilibiliSpeed: DEFAULT_BILIBILI_SPEED,
+            youtubeSpeed: DEFAULT_YOUTUBE_SPEED,
             enabled: DEFAULT_ENABLED
         });
 
-        bilibiliSpeed.value = clampSpeed(data.bilibiliSpeed);
-        youtubeSpeed.value = clampSpeed(data.youtubeSpeed);
+        bilibiliSpeed.value = clampSpeed(data.bilibiliSpeed, DEFAULT_BILIBILI_SPEED);
+        youtubeSpeed.value = clampSpeed(data.youtubeSpeed, DEFAULT_YOUTUBE_SPEED);
         bilibiliSpeedInput.value = bilibiliSpeed.value;
         youtubeSpeedInput.value = youtubeSpeed.value;
         enableControl.checked = data.enabled;
@@ -84,14 +107,14 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     // 监听数字输入变化
     bilibiliSpeedInput.addEventListener('change', () => {
-        const val = clampSpeed(bilibiliSpeedInput.value);
+        const val = clampSpeed(bilibiliSpeedInput.value, DEFAULT_BILIBILI_SPEED);
         bilibiliSpeed.value = val;
         bilibiliSpeedInput.value = val;
         updateSpeedDisplay(bilibiliSpeed, bilibiliSpeedValue);
         saveSettings();
     });
     youtubeSpeedInput.addEventListener('change', () => {
-        const val = clampSpeed(youtubeSpeedInput.value);
+        const val = clampSpeed(youtubeSpeedInput.value, DEFAULT_YOUTUBE_SPEED);
         youtubeSpeed.value = val;
         youtubeSpeedInput.value = val;
         updateSpeedDisplay(youtubeSpeed, youtubeSpeedValue);
@@ -132,17 +155,20 @@ document.addEventListener('DOMContentLoaded', async function () {
      * 验证速度值在有效范围内
      */
     async function saveSettings() {
-        const bSpeed = parseFloat(bilibiliSpeed.value);
-        const ySpeed = parseFloat(youtubeSpeed.value);
+        const bParsed = parseFloat(bilibiliSpeed.value);
+        const yParsed = parseFloat(youtubeSpeed.value);
         const isEnabled = enableControl.checked;
 
-        if (isNaN(bSpeed) || bSpeed < MIN_SPEED || bSpeed > MAX_SPEED ||
-            isNaN(ySpeed) || ySpeed < MIN_SPEED || ySpeed > MAX_SPEED) {
+        if (isNaN(bParsed) || bParsed < MIN_SPEED || bParsed > MAX_SPEED ||
+            isNaN(yParsed) || yParsed < MIN_SPEED || yParsed > MAX_SPEED) {
             const errorMsg = `速度必须在 ${MIN_SPEED}x 和 ${MAX_SPEED}x 之间`;
             console.error(`[Speed Controller] Invalid speed value. ${errorMsg}`);
             showStatusMessage(errorMsg, true);
             return;
         }
+
+        const bSpeed = clampSpeed(bParsed, DEFAULT_BILIBILI_SPEED);
+        const ySpeed = clampSpeed(yParsed, DEFAULT_YOUTUBE_SPEED);
 
         try {
             await chrome.storage.sync.set({
@@ -164,6 +190,11 @@ document.addEventListener('DOMContentLoaded', async function () {
     youtubeSpeed.addEventListener('change', saveSettings);
     enableControl.addEventListener('change', saveSettings);
 
+    const DEFAULTS_BY_SLIDER = {
+        bilibiliSpeed: DEFAULT_BILIBILI_SPEED,
+        youtubeSpeed: DEFAULT_YOUTUBE_SPEED
+    };
+
     // 处理重置按钮点击
     resetButtons.forEach(button => {
         button.addEventListener('click', function () {
@@ -172,10 +203,12 @@ document.addEventListener('DOMContentLoaded', async function () {
             const sliderElement = document.getElementById(sliderId);
             const displayElement = document.getElementById(displayId);
             const inputElement = document.getElementById(sliderId + 'Input');
+            const defaultValue = DEFAULTS_BY_SLIDER[sliderId] ?? DEFAULT_SPEED;
 
             if (sliderElement && displayElement) {
-                sliderElement.value = DEFAULT_SPEED;
-                if (inputElement) inputElement.value = DEFAULT_SPEED;
+                const clampedDefault = clampSpeed(defaultValue, defaultValue);
+                sliderElement.value = clampedDefault;
+                if (inputElement) inputElement.value = clampedDefault;
                 updateSpeedDisplay(sliderElement, displayElement);
                 saveSettings();
                 showStatusMessage('已重置 ✓');

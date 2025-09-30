@@ -8,6 +8,11 @@
 
     let controller = null;
 
+    const DEFAULT_SPEEDS = (window.SPEED_SETTINGS && window.SPEED_SETTINGS.PLATFORM_DEFAULTS) || {
+        bilibili: 1.25,
+        youtube: 1.5
+    };
+
     // B站特定的配置
     const bilibiliConfig = {
         // B站播放器选择器数组，按优先级排序
@@ -29,7 +34,7 @@
         deepTargetWarningThreshold: 9,
         // B站视频加载可能需要更长的延迟
         debounceDelay: 500,
-        defaultSpeed: 1.25,
+        defaultSpeed: DEFAULT_SPEEDS.bilibili || 1.25,
         defaultEnabled: true
     };
 

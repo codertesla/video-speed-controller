@@ -1,6 +1,29 @@
 // 简化版本的 background.js
 console.info("[Speed Controller] Background service worker started");
 
+const MIN_ALLOWED_SPEED = 0.1;
+const MAX_ALLOWED_SPEED = 3.0;
+const STORAGE_DEFAULTS = Object.freeze({
+    enabled: true,
+    bilibiliSpeed: 1.25,
+    youtubeSpeed: 1.5
+});
+
+function getStorageDefaults() {
+    return { ...STORAGE_DEFAULTS };
+}
+
+function sanitizeSpeed(value, fallback) {
+    const fallbackSpeed = typeof fallback === 'number' ? fallback : STORAGE_DEFAULTS.bilibiliSpeed;
+    const numericValue = parseFloat(value);
+
+    if (Number.isNaN(numericValue)) {
+        return Math.max(MIN_ALLOWED_SPEED, Math.min(MAX_ALLOWED_SPEED, fallbackSpeed));
+    }
+
+    return Math.max(MIN_ALLOWED_SPEED, Math.min(MAX_ALLOWED_SPEED, numericValue));
+}
+
 // 消息管理器 - 优化消息传递机制
 class MessageManager {
     constructor() {
@@ -37,6 +60,8 @@ class MessageManager {
         try {
             const result = await this.sendMessageWithRetry(tabId, message, timeout);
 
+            this.clearMessagePending(tabId, messageKey);
+
             // 消息发送成功，处理队列中的下一条消息
             this.processQueuedMessages(tabId);
 
@@ -50,6 +75,14 @@ class MessageManager {
             if (this.shouldRetry(error) && !skipQueue) {
                 console.log(`[MessageManager] Queuing failed message ${messageKey} for retry`);
                 this.queueMessage(tabId, { message, options, messageKey }, true);
+                const retryDelay = this.retryDelays[0] || 1000;
+                setTimeout(() => {
+                    try {
+                        this.processQueuedMessages(tabId);
+                    } catch (processError) {
+                        console.error('[MessageManager] Failed to process queued messages after retry scheduling:', processError);
+                    }
+                }, retryDelay);
             } else {
                 throw error;
             }
@@ -110,7 +143,12 @@ class MessageManager {
     // 获取消息唯一键（用于去重）
     getMessageKey(message) {
         if (message.type === 'applySettings') {
-            return `applySettings_${message.settings?.speed || 'unknown'}`;
+            const speedValue = message.settings?.speed;
+            const enabledValue = message.settings?.enabled;
+            const normalizedSpeed = typeof speedValue === 'number' ? speedValue : parseFloat(speedValue);
+            const speedKey = Number.isFinite(normalizedSpeed) ? normalizedSpeed : 'unknown';
+            const enabledKey = enabledValue === false ? 'off' : 'on';
+            return `applySettings_${enabledKey}_${speedKey}`;
         }
         return message.type || 'unknown';
     }
@@ -286,8 +324,8 @@ async function updateBadge(enabled, speed) {
                 await chrome.action.setBadgeBackgroundColor({ color: '#888888' });
             } else if (speed && typeof speed === 'number' && !isNaN(speed)) {
                 // 验证速度值范围
-                const validSpeed = Math.max(0.1, Math.min(16, speed));
-                const speedText = validSpeed % 1 === 0 ? validSpeed.toString() : validSpeed.toFixed(1);
+                const validSpeed = sanitizeSpeed(speed, speed);
+                const speedText = Number.isInteger(validSpeed) ? validSpeed.toString() : validSpeed.toFixed(1);
 
                 await chrome.action.setBadgeText({ text: speedText });
                 await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
@@ -375,15 +413,11 @@ async function handleTabUpdate(tabId, url) {
         // 使用重试机制获取存储设置
         const data = await ErrorHandler.withRetry(async () => {
             return new Promise((resolve, reject) => {
-    chrome.storage.sync.get({
-        enabled: true,
-                    bilibiliSpeed: 1.25,
-                    youtubeSpeed: 1.5
-                }, (result) => {
-        if (chrome.runtime.lastError) {
+                chrome.storage.sync.get(getStorageDefaults(), (result) => {
+                    if (chrome.runtime.lastError) {
                         reject(chrome.runtime.lastError);
-            return;
-        }
+                        return;
+                    }
                     resolve(result);
                 });
             });
@@ -392,8 +426,8 @@ async function handleTabUpdate(tabId, url) {
         // 验证和清理设置数据
         const validatedData = {
             enabled: Boolean(data.enabled),
-            bilibiliSpeed: Math.max(0.1, Math.min(16, parseFloat(data.bilibiliSpeed) || 1.25)),
-            youtubeSpeed: Math.max(0.1, Math.min(16, parseFloat(data.youtubeSpeed) || 1.5))
+            bilibiliSpeed: sanitizeSpeed(data.bilibiliSpeed, STORAGE_DEFAULTS.bilibiliSpeed),
+            youtubeSpeed: sanitizeSpeed(data.youtubeSpeed, STORAGE_DEFAULTS.youtubeSpeed)
         };
 
         // 更新 Badge 显示
@@ -454,11 +488,7 @@ chrome.storage.onChanged.addListener(async function (changes, namespace) {
         // 获取最新的设置数据
         const data = await ErrorHandler.withRetry(async () => {
             return new Promise((resolve, reject) => {
-            chrome.storage.sync.get({
-                    enabled: true,
-                    bilibiliSpeed: 1.25,
-                    youtubeSpeed: 1.5
-                }, (result) => {
+                chrome.storage.sync.get(getStorageDefaults(), (result) => {
                     if (chrome.runtime.lastError) {
                         reject(chrome.runtime.lastError);
                         return;
@@ -468,16 +498,20 @@ chrome.storage.onChanged.addListener(async function (changes, namespace) {
             });
         }, 2, 200, 'getUpdatedStorageSettings');
 
+        const sanitizedBilibiliSpeed = sanitizeSpeed(data.bilibiliSpeed, STORAGE_DEFAULTS.bilibiliSpeed);
+        const sanitizedYoutubeSpeed = sanitizeSpeed(data.youtubeSpeed, STORAGE_DEFAULTS.youtubeSpeed);
+
         // 获取最新的启用状态
-        const currentEnabled = changes.enabled ? changes.enabled.newValue : data.enabled;
+        const currentEnabledRaw = changes.enabled ? changes.enabled.newValue : data.enabled;
+        const currentEnabled = Boolean(currentEnabledRaw);
         const url = activeTab.url || "";
 
         // 更新当前标签页的 Badge 显示
-        await updateBadgeBasedOnUrl(currentEnabled, url, data.bilibiliSpeed, data.youtubeSpeed);
+        await updateBadgeBasedOnUrl(currentEnabled, url, sanitizedBilibiliSpeed, sanitizedYoutubeSpeed);
 
         // 如果是视频页面，通知内容脚本
         if ((isBilibiliVideoPage(url) || isYouTubeVideoPage(url)) && activeTab.id) {
-            const speed = isBilibiliVideoPage(url) ? data.bilibiliSpeed : data.youtubeSpeed;
+            const speed = isBilibiliVideoPage(url) ? sanitizedBilibiliSpeed : sanitizedYoutubeSpeed;
             await notifyContentScript(activeTab.id, { enabled: currentEnabled, speed: speed });
         }
 
@@ -597,7 +631,8 @@ chrome.commands.onCommand.addListener(async (command) => {
             });
         }, 2, 200, 'getEnabledStatus');
 
-        const currentEnabled = data.enabled !== undefined ? data.enabled : true;
+        const currentEnabledRaw = data.enabled !== undefined ? data.enabled : STORAGE_DEFAULTS.enabled;
+        const currentEnabled = Boolean(currentEnabledRaw);
         const newEnabled = !currentEnabled;
 
         // 保存新的启用状态
@@ -645,51 +680,12 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
 
         console.log('[Speed Controller] Received message:', message.type, 'from tab:', sender.tab.id);
 
-        // 处理速度变化消息
-        if (message.type === 'speedChanged') {
-            try {
-                // 获取当前启用状态
-                const data = await ErrorHandler.withRetry(async () => {
-                    return new Promise((resolve, reject) => {
-                        chrome.storage.sync.get({ enabled: true }, (result) => {
-                            if (chrome.runtime.lastError) {
-                                reject(chrome.runtime.lastError);
-                                return;
-                            }
-                            resolve(result);
-                        });
-                    });
-                }, 2, 200, 'getEnabledForSpeedChange');
-
-                if (data.enabled && message.speed && typeof message.speed === 'number') {
-                    // 验证速度值范围
-                    const validSpeed = Math.max(0.1, Math.min(16, message.speed));
-                    await updateBadge(true, validSpeed);
-                    sendResponse({ success: true });
-                } else {
-                    sendResponse({ success: false, error: 'Speed control disabled or invalid speed' });
-                }
-
-            } catch (error) {
-                ErrorHandler.logError('Speed change message handling failed', error, {
-                    message,
-                    senderTabId: sender.tab.id
-                });
-                sendResponse({ success: false, error: 'Internal error' });
-            }
-            return true; // 异步响应
-        }
-
         // 处理状态查询消息
         if (message.type === 'getStatus') {
             try {
                 const data = await ErrorHandler.withRetry(async () => {
                     return new Promise((resolve, reject) => {
-                        chrome.storage.sync.get({
-                            enabled: true,
-                            bilibiliSpeed: 1.25,
-                            youtubeSpeed: 1.5
-                        }, (result) => {
+                        chrome.storage.sync.get(getStorageDefaults(), (result) => {
                             if (chrome.runtime.lastError) {
                                 reject(chrome.runtime.lastError);
                                 return;
@@ -702,9 +698,9 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
                 sendResponse({
                     success: true,
                     status: {
-                        enabled: data.enabled,
-                        bilibiliSpeed: data.bilibiliSpeed,
-                        youtubeSpeed: data.youtubeSpeed,
+                        enabled: Boolean(data.enabled),
+                        bilibiliSpeed: sanitizeSpeed(data.bilibiliSpeed, STORAGE_DEFAULTS.bilibiliSpeed),
+                        youtubeSpeed: sanitizeSpeed(data.youtubeSpeed, STORAGE_DEFAULTS.youtubeSpeed),
                         tabId: sender.tab.id,
                         url: sender.tab.url
                     }
@@ -775,7 +771,6 @@ async function updateBadgeBasedOnUrl(isEnabled, url, bilibiliSpeed, youtubeSpeed
         // 输入验证
         if (typeof isEnabled !== 'boolean') {
             console.warn('[Speed Controller] Invalid isEnabled value:', isEnabled);
-            isEnabled = false;
         }
 
         if (typeof url !== 'string') {
@@ -783,17 +778,19 @@ async function updateBadgeBasedOnUrl(isEnabled, url, bilibiliSpeed, youtubeSpeed
             url = '';
         }
 
-        // 验证和清理速度值
-        const validBiliSpeed = Math.max(0.1, Math.min(16, parseFloat(bilibiliSpeed) || 1.25));
-        const validYtSpeed = Math.max(0.1, Math.min(16, parseFloat(youtubeSpeed) || 1.5));
+        const normalizedEnabled = Boolean(isEnabled);
 
-    if (!isEnabled) {
+        // 验证和清理速度值
+        const validBiliSpeed = sanitizeSpeed(bilibiliSpeed, STORAGE_DEFAULTS.bilibiliSpeed);
+        const validYtSpeed = sanitizeSpeed(youtubeSpeed, STORAGE_DEFAULTS.youtubeSpeed);
+
+        if (!normalizedEnabled) {
             await updateBadge(false); // 显示 OFF
-    } else if (isBilibiliVideoPage(url)) {
+        } else if (isBilibiliVideoPage(url)) {
             await updateBadge(true, validBiliSpeed); // 显示 B站速度
-    } else if (isYouTubeVideoPage(url)) {
+        } else if (isYouTubeVideoPage(url)) {
             await updateBadge(true, validYtSpeed); // 显示 YouTube 速度
-    } else {
+        } else {
             await updateBadge(true); // 非视频页显示 ON
         }
 
@@ -838,21 +835,20 @@ chrome.runtime.onStartup.addListener(async () => {
 
         const data = await ErrorHandler.withRetry(async () => {
             return new Promise((resolve, reject) => {
-        chrome.storage.sync.get({
-            enabled: true,
-            bilibiliSpeed: 1.25,
-            youtubeSpeed: 1.5
-                }, (result) => {
+                chrome.storage.sync.get(getStorageDefaults(), (result) => {
                     if (chrome.runtime.lastError) {
                         reject(chrome.runtime.lastError);
                         return;
                     }
                     resolve(result);
-        });
-    });
+                });
+            });
         }, 2, 200, 'getStorageOnStartup');
 
-        await updateBadgeBasedOnUrl(data.enabled, tabs[0].url || "", data.bilibiliSpeed, data.youtubeSpeed);
+        const sanitizedBilibiliSpeed = sanitizeSpeed(data.bilibiliSpeed, STORAGE_DEFAULTS.bilibiliSpeed);
+        const sanitizedYoutubeSpeed = sanitizeSpeed(data.youtubeSpeed, STORAGE_DEFAULTS.youtubeSpeed);
+
+        await updateBadgeBasedOnUrl(Boolean(data.enabled), tabs[0].url || "", sanitizedBilibiliSpeed, sanitizedYoutubeSpeed);
 
     } catch (error) {
         ErrorHandler.logError('Startup initialization failed', error);
@@ -868,11 +864,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         // 设置默认值
             await ErrorHandler.withRetry(async () => {
                 return new Promise((resolve, reject) => {
-        chrome.storage.sync.set({
-            enabled: true,
-            bilibiliSpeed: 1.25,
-            youtubeSpeed: 1.5
-                    }, () => {
+                    chrome.storage.sync.set({ ...STORAGE_DEFAULTS }, () => {
                         if (chrome.runtime.lastError) {
                             reject(chrome.runtime.lastError);
                             return;
@@ -906,21 +898,20 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         // 获取设置并更新badge
         const data = await ErrorHandler.withRetry(async () => {
             return new Promise((resolve, reject) => {
-        chrome.storage.sync.get({
-            enabled: true,
-            bilibiliSpeed: 1.25,
-            youtubeSpeed: 1.5
-                }, (result) => {
+                chrome.storage.sync.get(getStorageDefaults(), (result) => {
                     if (chrome.runtime.lastError) {
                         reject(chrome.runtime.lastError);
                         return;
                     }
                     resolve(result);
-        });
-    });
+                });
+            });
         }, 2, 200, 'getStorageOnInstall');
 
-        await updateBadgeBasedOnUrl(data.enabled, tabs[0].url || "", data.bilibiliSpeed, data.youtubeSpeed);
+        const sanitizedBilibiliSpeed = sanitizeSpeed(data.bilibiliSpeed, STORAGE_DEFAULTS.bilibiliSpeed);
+        const sanitizedYoutubeSpeed = sanitizeSpeed(data.youtubeSpeed, STORAGE_DEFAULTS.youtubeSpeed);
+
+        await updateBadgeBasedOnUrl(Boolean(data.enabled), tabs[0].url || "", sanitizedBilibiliSpeed, sanitizedYoutubeSpeed);
 
     } catch (error) {
         ErrorHandler.logError('Installation initialization failed', error, { details });
@@ -942,4 +933,4 @@ if (chrome.runtime.getManifest().version.includes('dev')) {
         // 清理长时间未使用的状态（可选）
         // 这里可以添加更复杂的清理逻辑
     }, 30000); // 每30秒报告一次状态
-} 
+}

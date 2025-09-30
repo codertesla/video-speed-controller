@@ -7,7 +7,7 @@
     'use strict';
 
     const MIN_SPEED = (window.SPEED_SETTINGS && window.SPEED_SETTINGS.MIN) || 0.1;
-    const MAX_SPEED = (window.SPEED_SETTINGS && window.SPEED_SETTINGS.MAX) || 16.0;
+    const MAX_SPEED = (window.SPEED_SETTINGS && window.SPEED_SETTINGS.MAX) || 3.0;
 
     // 错误处理工具
     class ErrorHandler {
@@ -38,19 +38,6 @@
             }
         }
 
-        static async withRetry(operation, maxRetries = 3, delay = 1000) {
-            for (let i = 0; i < maxRetries; i++) {
-                try {
-                    return await operation();
-                } catch (error) {
-                    if (i === maxRetries - 1) {
-                        throw error;
-                    }
-                    ErrorHandler.log('warn', `操作失败，重试 ${i + 1}/${maxRetries}`, error);
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                }
-            }
-        }
     }
 
     // DOM操作工具

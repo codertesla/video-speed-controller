@@ -8,6 +8,11 @@
 
     let controller = null;
 
+    const DEFAULT_SPEEDS = (window.SPEED_SETTINGS && window.SPEED_SETTINGS.PLATFORM_DEFAULTS) || {
+        bilibili: 1.25,
+        youtube: 1.5
+    };
+
     // YouTube特定的配置
     const youtubeConfig = {
         // YouTube播放器选择器数组，按优先级排序
@@ -30,7 +35,7 @@
         maxObserverDepth: 6,
         deepTargetWarningThreshold: 9,
         manualOverrideInteractionWindow: 1600,
-        defaultSpeed: 1.5,
+        defaultSpeed: DEFAULT_SPEEDS.youtube || 1.5,
         defaultEnabled: true
     };
 

@@ -24,6 +24,124 @@ function sanitizeSpeed(value, fallback) {
     return Math.max(MIN_ALLOWED_SPEED, Math.min(MAX_ALLOWED_SPEED, numericValue));
 }
 
+// 小圆点图标管理器
+class ActionIconManager {
+    constructor() {
+        this.iconCache = new Map();
+        this.currentState = null;
+        this.iconSizes = [16, 19, 32, 38, 48, 128];
+        this.stateColors = Object.freeze({
+            enabled: '#4CAF50',
+            disabled: '#9E9E9E'
+        });
+        this.baseIconPromise = null;
+        this.supportsOffscreenCanvas = typeof OffscreenCanvas !== 'undefined' && typeof createImageBitmap === 'function';
+    }
+
+    async ensureBaseIcon() {
+        if (!this.supportsOffscreenCanvas) {
+            return null;
+        }
+
+        if (!this.baseIconPromise) {
+            this.baseIconPromise = (async () => {
+                try {
+                    const response = await fetch(chrome.runtime.getURL('icons/icon.png'));
+                    if (!response.ok) {
+                        throw new Error(`Failed to load base icon: ${response.status}`);
+                    }
+                    const blob = await response.blob();
+                    return await createImageBitmap(blob);
+                } catch (error) {
+                    console.warn('[Speed Controller] Unable to load base icon for indicator overlay:', error);
+                    this.supportsOffscreenCanvas = false;
+                    return null;
+                }
+            })();
+        }
+
+        return this.baseIconPromise;
+    }
+
+    async setState(state) {
+        const normalizedState = this.stateColors[state] ? state : 'enabled';
+
+        if (this.currentState === normalizedState) {
+            return;
+        }
+
+        if (!this.supportsOffscreenCanvas) {
+            this.currentState = normalizedState;
+            return;
+        }
+
+        const baseIcon = await this.ensureBaseIcon();
+        if (!baseIcon) {
+            this.currentState = normalizedState;
+            return;
+        }
+
+        const imageDataMap = {};
+
+        for (const size of this.iconSizes) {
+            const cacheKey = `${normalizedState}-${size}`;
+
+            if (!this.iconCache.has(cacheKey)) {
+                const canvas = new OffscreenCanvas(size, size);
+                const context = canvas.getContext('2d', { willReadFrequently: true });
+
+                if (!context) {
+                    console.warn('[Speed Controller] OffscreenCanvas context unavailable, skipping icon overlay');
+                    this.supportsOffscreenCanvas = false;
+                    this.currentState = normalizedState;
+                    return;
+                }
+
+                context.clearRect(0, 0, size, size);
+
+                const scale = Math.min(size / baseIcon.width, size / baseIcon.height);
+                const drawWidth = baseIcon.width * scale;
+                const drawHeight = baseIcon.height * scale;
+                const offsetX = (size - drawWidth) / 2;
+                const offsetY = (size - drawHeight) / 2;
+
+                context.drawImage(baseIcon, offsetX, offsetY, drawWidth, drawHeight);
+
+                const color = this.stateColors[normalizedState];
+                const radius = Math.max(3, Math.floor(size / 5));
+                const margin = Math.max(1, Math.floor(size / 12));
+                const centerX = size - margin - radius;
+                const centerY = size - margin - radius;
+                const outlineRadius = radius + Math.max(1, Math.floor(size / 20));
+
+                context.fillStyle = '#FFFFFF';
+                context.beginPath();
+                context.arc(centerX, centerY, outlineRadius, 0, Math.PI * 2);
+                context.fill();
+
+                context.fillStyle = color;
+                context.beginPath();
+                context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                context.fill();
+
+                const imageData = context.getImageData(0, 0, size, size);
+                this.iconCache.set(cacheKey, imageData);
+            }
+
+            imageDataMap[size] = this.iconCache.get(cacheKey);
+        }
+
+        try {
+            await chrome.action.setIcon({ imageData: imageDataMap });
+            this.currentState = normalizedState;
+        } catch (error) {
+            console.warn('[Speed Controller] Failed to update action icon:', error);
+        }
+    }
+}
+
+const actionIconManager = new ActionIconManager();
+
 // 消息管理器 - 优化消息传递机制
 class MessageManager {
     constructor() {
@@ -319,28 +437,41 @@ class ErrorHandler {
 async function updateBadge(enabled, speed) {
     try {
         await ErrorHandler.withRetry(async () => {
+            await actionIconManager.setState(enabled ? 'enabled' : 'disabled');
+            const canRenderIndicator = actionIconManager.supportsOffscreenCanvas;
+
             if (!enabled) {
-                await chrome.action.setBadgeText({ text: 'OFF' });
-                await chrome.action.setBadgeBackgroundColor({ color: '#888888' });
-            } else if (speed && typeof speed === 'number' && !isNaN(speed)) {
-                // 验证速度值范围
+                if (canRenderIndicator) {
+                    await chrome.action.setBadgeText({ text: '' });
+                } else {
+                    await chrome.action.setBadgeText({ text: 'OFF' });
+                    await chrome.action.setBadgeBackgroundColor({ color: '#888888' });
+                }
+                return;
+            }
+
+            if (typeof speed === 'number' && Number.isFinite(speed)) {
                 const validSpeed = sanitizeSpeed(speed, speed);
                 const speedText = Number.isInteger(validSpeed) ? validSpeed.toString() : validSpeed.toFixed(1);
 
                 await chrome.action.setBadgeText({ text: speedText });
                 await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
             } else {
-                await chrome.action.setBadgeText({ text: 'ON' });
-                await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
+                if (canRenderIndicator) {
+                    await chrome.action.setBadgeText({ text: '' });
+                } else {
+                    await chrome.action.setBadgeText({ text: 'ON' });
+                    await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
+                }
             }
-        }, 2, 500, 'updateBadge'); // 重试2次，延迟500ms
+        }, 2, 500, 'updateBadge');
 
     } catch (error) {
         ErrorHandler.logError('Badge update failed', error, { enabled, speed });
-        // 降级处理：尝试只设置文本
         try {
             await chrome.action.setBadgeText({ text: '!' });
             await chrome.action.setBadgeBackgroundColor({ color: '#f44336' });
+            await actionIconManager.setState('disabled');
         } catch (fallbackError) {
             console.error('[Speed Controller] Fallback badge update also failed:', fallbackError);
         }
